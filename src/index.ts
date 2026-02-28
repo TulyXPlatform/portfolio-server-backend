@@ -273,8 +273,13 @@ app.delete("/api/admin/projects/:id", authMiddleware, async (req, res) => {
 
 // Skills
 app.get("/api/admin/skills", authMiddleware, async (_req, res) => {
-  const items = await Skill.find();
-  res.json(items.map(item => ({ ...item.toObject(), id: item._id })));
+  try {
+    const items = await Skill.find();
+    res.json(items.map(item => ({ ...item.toObject(), id: item._id })));
+  } catch (err) {
+    console.error('[API] /api/admin/skills error', err);
+    res.status(500).json({ error: 'Server error' });
+  }
 });
 
 app.post("/api/admin/skills", authMiddleware, async (req, res) => {
