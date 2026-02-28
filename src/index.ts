@@ -252,7 +252,8 @@ app.post("/api/login", async (req, res) => {
 /* ================= ADMIN CRUD ================= */
 
 app.get("/api/admin/projects", authMiddleware, async (_req, res) => {
-  res.json(await Project.find().sort({ createdAt: -1 }));
+  const items = await Project.find().sort({ createdAt: -1 });
+  res.json(items.map(item => ({ ...item.toObject(), id: item._id })));
 });
 
 app.post("/api/admin/projects", authMiddleware, async (req, res) => {
@@ -272,7 +273,8 @@ app.delete("/api/admin/projects/:id", authMiddleware, async (req, res) => {
 
 // Skills
 app.get("/api/admin/skills", authMiddleware, async (_req, res) => {
-  res.json(await Skill.find());
+  const items = await Skill.find();
+  res.json(items.map(item => ({ ...item.toObject(), id: item._id })));
 });
 
 app.post("/api/admin/skills", authMiddleware, async (req, res) => {
@@ -292,7 +294,8 @@ app.delete("/api/admin/skills/:id", authMiddleware, async (req, res) => {
 
 // Experiences
 app.get("/api/admin/experiences", authMiddleware, async (_req, res) => {
-  res.json(await Experience.find());
+  const items = await Experience.find();
+  res.json(items.map(item => ({ ...item.toObject(), id: item._id })));
 });
 
 app.post("/api/admin/experiences", authMiddleware, async (req, res) => {
@@ -312,7 +315,8 @@ app.delete("/api/admin/experiences/:id", authMiddleware, async (req, res) => {
 
 // Blog posts
 app.get("/api/admin/posts", authMiddleware, async (_req, res) => {
-  res.json(await BlogPost.find());
+  const items = await BlogPost.find();
+  res.json(items.map(item => ({ ...item.toObject(), id: item._id })));
 });
 
 app.post("/api/admin/posts", authMiddleware, async (req, res) => {
@@ -332,7 +336,8 @@ app.delete("/api/admin/posts/:id", authMiddleware, async (req, res) => {
 
 // Social
 app.get("/api/admin/social", authMiddleware, async (_req, res) => {
-  res.json(await SocialLink.find());
+  const items = await SocialLink.find();
+  res.json(items.map(item => ({ ...item.toObject(), id: item._id })));
 });
 
 app.post("/api/admin/social", authMiddleware, async (req, res) => {
@@ -347,6 +352,17 @@ app.put("/api/admin/social/:id", authMiddleware, async (req, res) => {
 
 app.delete("/api/admin/social/:id", authMiddleware, async (req, res) => {
   await SocialLink.findByIdAndDelete(req.params.id);
+  res.json({ success: true });
+});
+
+// Messages
+app.get("/api/admin/messages", authMiddleware, async (_req, res) => {
+  const messages = await Message.find().sort({ createdAt: -1 });
+  res.json(messages.map(msg => ({ ...msg.toObject(), id: msg._id })));
+});
+
+app.delete("/api/admin/messages/:id", authMiddleware, async (req, res) => {
+  await Message.findByIdAndDelete(req.params.id);
   res.json({ success: true });
 });
 
