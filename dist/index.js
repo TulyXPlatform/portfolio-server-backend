@@ -1,4 +1,37 @@
 "use strict";
+var __createBinding = (this && this.__createBinding) || (Object.create ? (function(o, m, k, k2) {
+    if (k2 === undefined) k2 = k;
+    var desc = Object.getOwnPropertyDescriptor(m, k);
+    if (!desc || ("get" in desc ? !m.__esModule : desc.writable || desc.configurable)) {
+      desc = { enumerable: true, get: function() { return m[k]; } };
+    }
+    Object.defineProperty(o, k2, desc);
+}) : (function(o, m, k, k2) {
+    if (k2 === undefined) k2 = k;
+    o[k2] = m[k];
+}));
+var __setModuleDefault = (this && this.__setModuleDefault) || (Object.create ? (function(o, v) {
+    Object.defineProperty(o, "default", { enumerable: true, value: v });
+}) : function(o, v) {
+    o["default"] = v;
+});
+var __importStar = (this && this.__importStar) || (function () {
+    var ownKeys = function(o) {
+        ownKeys = Object.getOwnPropertyNames || function (o) {
+            var ar = [];
+            for (var k in o) if (Object.prototype.hasOwnProperty.call(o, k)) ar[ar.length] = k;
+            return ar;
+        };
+        return ownKeys(o);
+    };
+    return function (mod) {
+        if (mod && mod.__esModule) return mod;
+        var result = {};
+        if (mod != null) for (var k = ownKeys(mod), i = 0; i < k.length; i++) if (k[i] !== "default") __createBinding(result, mod, k[i]);
+        __setModuleDefault(result, mod);
+        return result;
+    };
+})();
 var __awaiter = (this && this.__awaiter) || function (thisArg, _arguments, P, generator) {
     function adopt(value) { return value instanceof P ? value : new P(function (resolve) { resolve(value); }); }
     return new (P || (P = Promise))(function (resolve, reject) {
@@ -32,11 +65,60 @@ const SocialLink_1 = __importDefault(require("./models/SocialLink"));
 const Setting_1 = __importDefault(require("./models/Setting"));
 const Visitor_1 = __importDefault(require("./models/Visitor"));
 dotenv_1.default.config();
-(0, db_1.connectDB)();
+// connect to database (returns a promise so we can hook into it)
+(0, db_1.connectDB)().then(() => __awaiter(void 0, void 0, void 0, function* () {
+    // if you've set SEED_DB=true (e.g. on Render one‑off or locally), run seeder
+    if (process.env.SEED_DB === "true") {
+        try {
+            const seedModule = yield Promise.resolve().then(() => __importStar(require("./seed")));
+            if (seedModule.seedData) {
+                console.log("[DB] seeding because SEED_DB=true");
+                yield seedModule.seedData().catch(err => console.error("Seed error:", err));
+            }
+        }
+        catch (err) {
+            console.error("Failed to load seed module:", err);
+        }
+    }
+}));
 const app = (0, express_1.default)();
 const JWT_SECRET = process.env.JWT_SECRET;
-app.use((0, cors_1.default)());
+// Configure CORS to allow requests from deployed Vercel frontends
+const allowedOrigins = [
+    "http://localhost:5173",
+    "http://localhost:5174",
+    "https://localhost:5173",
+    "https://localhost:5174",
+    process.env.PORTFOLIO_URL || "",
+    process.env.ADMIN_URL || ""
+].filter(Boolean);
+app.use((0, cors_1.default)({
+    origin: (origin, callback) => {
+        if (!origin || allowedOrigins.includes(origin)) {
+            callback(null, true);
+        }
+        else {
+            console.log(`Blocked by CORS: ${origin}`);
+            callback(new Error("Not allowed by CORS"));
+        }
+    },
+    credentials: true
+}));
 app.use(express_1.default.json());
+// Content Security Policy (CSP) header — adjust origins as needed.
+app.use((req, res, next) => {
+    const csp = [
+        "default-src 'self'",
+        "script-src 'self' https://cdn.jsdelivr.net",
+        "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com https://cdn.jsdelivr.net",
+        "img-src 'self' data: blob: https://cdn.jsdelivr.net",
+        "connect-src 'self' http://localhost:5000 ws://localhost:5175 https://api.ipify.org https://ip-api.com",
+        "font-src 'self' https://fonts.gstatic.com https://cdn.jsdelivr.net",
+        "frame-src 'none'"
+    ].join('; ');
+    res.setHeader('Content-Security-Policy', csp);
+    next();
+});
 // uploads
 const uploadsDir = path_1.default.join(__dirname, "..", "uploads");
 if (!fs_1.default.existsSync(uploadsDir))
@@ -99,24 +181,35 @@ const trackVisitor = (req) => __awaiter(void 0, void 0, void 0, function* () {
 });
 /* ================= PUBLIC ================= */
 app.get("/api/portfolio", (req, res) => __awaiter(void 0, void 0, void 0, function* () {
+    console.log(`[API] GET /api/portfolio from ${req.ip} origin=${req.headers.origin} host=${req.headers.host}`);
     trackVisitor(req);
-    const [socialLinks, projects, skills, posts, experiences, settings] = yield Promise.all([
-        SocialLink_1.default.find(),
-        Project_1.default.find().sort({ createdAt: -1 }),
-        Skill_1.default.find(),
-        BlogPost_1.default.find().select("title summary coverImage createdAt"),
-        Experience_1.default.find(),
-        Setting_1.default.findOne({ keyName: "cvLink" })
-    ]);
-    res.json({
-        socialLinks,
-        projects,
-        skills,
-        posts,
-        experiences,
-        cvLink: (settings === null || settings === void 0 ? void 0 : settings.value) || "/cv.pdf"
-    });
+    try {
+        const [socialLinks, projects, skills, posts, experiences, settings] = yield Promise.all([
+            SocialLink_1.default.find(),
+            Project_1.default.find().sort({ createdAt: -1 }),
+            Skill_1.default.find(),
+            BlogPost_1.default.find().select("title summary coverImage createdAt"),
+            Experience_1.default.find(),
+            Setting_1.default.findOne({ keyName: "cvLink" })
+        ]);
+        res.json({
+            socialLinks,
+            projects,
+            skills,
+            posts,
+            experiences,
+            cvLink: (settings === null || settings === void 0 ? void 0 : settings.value) || "/cv.pdf"
+        });
+    }
+    catch (err) {
+        console.error('[API] /api/portfolio error', err);
+        res.status(500).json({ error: 'Server error' });
+    }
 }));
+// root info
+app.get('/', (_req, res) => {
+    res.send('Portfolio API — use /api/portfolio');
+});
 app.get("/api/projects/:id", (req, res) => __awaiter(void 0, void 0, void 0, function* () {
     const project = yield Project_1.default.findById(req.params.id);
     if (!project)

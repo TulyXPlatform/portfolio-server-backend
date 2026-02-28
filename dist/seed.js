@@ -12,6 +12,7 @@ var __importDefault = (this && this.__importDefault) || function (mod) {
     return (mod && mod.__esModule) ? mod : { "default": mod };
 };
 Object.defineProperty(exports, "__esModule", { value: true });
+exports.seedData = seedData;
 const mongoose_1 = __importDefault(require("mongoose"));
 const dotenv_1 = __importDefault(require("dotenv"));
 const User_1 = __importDefault(require("./models/User"));
@@ -27,7 +28,7 @@ dotenv_1.default.config();
 mongoose_1.default.connect(process.env.MONGO_URI)
     .then(() => console.log("MongoDB connected"))
     .catch(err => console.error(err));
-function seed() {
+function seedData() {
     return __awaiter(this, void 0, void 0, function* () {
         try {
             // Clear old data (optional)
@@ -126,4 +127,7 @@ function seed() {
         }
     });
 }
-seed();
+// allow the file to be executed directly or imported
+if (require.main === module) {
+    seedData();
+}

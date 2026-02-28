@@ -17,7 +17,7 @@ mongoose.connect(process.env.MONGO_URI!)
   .then(() => console.log("MongoDB connected"))
   .catch(err => console.error(err));
 
-async function seed() {
+export async function seedData() {
   try {
     // Clear old data (optional)
     await User.deleteMany({});
@@ -123,4 +123,7 @@ async function seed() {
   }
 }
 
-seed();
+// allow the file to be executed directly or imported
+if (require.main === module) {
+  seedData();
+}

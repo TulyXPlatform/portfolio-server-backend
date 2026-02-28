@@ -21,13 +21,64 @@ import Setting from "./models/Setting";
 import Visitor from "./models/Visitor";
 
 dotenv.config();
-connectDB();
+
+// connect to database (returns a promise so we can hook into it)
+connectDB().then(async () => {
+  // if you've set SEED_DB=true (e.g. on Render one‑off or locally), run seeder
+  if (process.env.SEED_DB === "true") {
+    try {
+      const seedModule = await import("./seed") as { seedData?: () => Promise<void> };
+      if (seedModule.seedData) {
+        console.log("[DB] seeding because SEED_DB=true");
+        await seedModule.seedData().catch(err => console.error("Seed error:", err));
+      }
+    } catch (err) {
+      console.error("Failed to load seed module:", err);
+    }
+  }
+});
 
 const app = express();
 const JWT_SECRET = process.env.JWT_SECRET!;
 
-app.use(cors());
+// Configure CORS to allow requests from deployed Vercel frontends
+const allowedOrigins = [
+  "http://localhost:5173",
+  "http://localhost:5174",
+  "https://localhost:5173",
+  "https://localhost:5174",
+  process.env.PORTFOLIO_URL || "",
+  process.env.ADMIN_URL || ""
+].filter(Boolean);
+
+app.use(cors({
+  origin: (origin, callback) => {
+    if (!origin || allowedOrigins.includes(origin)) {
+      callback(null, true);
+    } else {
+      console.log(`Blocked by CORS: ${origin}`);
+      callback(new Error("Not allowed by CORS"));
+    }
+  },
+  credentials: true
+}));
+
 app.use(express.json());
+
+// Content Security Policy (CSP) header — adjust origins as needed.
+app.use((req, res, next) => {
+  const csp = [
+    "default-src 'self'",
+    "script-src 'self' https://cdn.jsdelivr.net",
+    "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com https://cdn.jsdelivr.net",
+    "img-src 'self' data: blob: https://cdn.jsdelivr.net",
+    "connect-src 'self' http://localhost:5000 ws://localhost:5175 https://api.ipify.org https://ip-api.com",
+    "font-src 'self' https://fonts.gstatic.com https://cdn.jsdelivr.net",
+    "frame-src 'none'"
+  ].join('; ');
+  res.setHeader('Content-Security-Policy', csp);
+  next();
+});
 
 // uploads
 const uploadsDir = path.join(__dirname, "..", "uploads");
@@ -98,26 +149,37 @@ const trackVisitor = async (req: Request) => {
 /* ================= PUBLIC ================= */
 
 app.get("/api/portfolio", async (req, res) => {
+  console.log(`[API] GET /api/portfolio from ${req.ip} origin=${req.headers.origin} host=${req.headers.host}`);
   trackVisitor(req);
 
-  const [socialLinks, projects, skills, posts, experiences, settings] =
-    await Promise.all([
-      SocialLink.find(),
-      Project.find().sort({ createdAt: -1 }),
-      Skill.find(),
-      BlogPost.find().select("title summary coverImage createdAt"),
-      Experience.find(),
-      Setting.findOne({ keyName: "cvLink" })
-    ]);
+  try {
+    const [socialLinks, projects, skills, posts, experiences, settings] =
+      await Promise.all([
+        SocialLink.find(),
+        Project.find().sort({ createdAt: -1 }),
+        Skill.find(),
+        BlogPost.find().select("title summary coverImage createdAt"),
+        Experience.find(),
+        Setting.findOne({ keyName: "cvLink" })
+      ]);
 
-  res.json({
-    socialLinks,
-    projects,
-    skills,
-    posts,
-    experiences,
-    cvLink: settings?.value || "/cv.pdf"
-  });
+    res.json({
+      socialLinks,
+      projects,
+      skills,
+      posts,
+      experiences,
+      cvLink: settings?.value || "/cv.pdf"
+    });
+  } catch (err) {
+    console.error('[API] /api/portfolio error', err);
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
+// root info
+app.get('/', (_req, res) => {
+  res.send('Portfolio API — use /api/portfolio');
 });
 
 app.get("/api/projects/:id", async (req, res) => {
