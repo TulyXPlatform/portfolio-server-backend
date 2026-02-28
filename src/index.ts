@@ -61,6 +61,7 @@ const allowedOrigins = [
   process.env.ADMIN_URL || ""
 ].filter(Boolean);
 
+// CORS configuration with proper preflight handling
 app.use(cors({
   origin: (origin, callback) => {
     // Allow no origin (e.g., mobile, Postman)
@@ -84,7 +85,10 @@ app.use(cors({
     console.log(`Blocked by CORS: ${origin}`);
     callback(new Error("Not allowed by CORS"));
   },
-  credentials: true
+  credentials: true,
+  allowedHeaders: ["Content-Type", "Authorization"],
+  methods: ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
+  maxAge: 3600
 }));
 
 app.use(express.json());
