@@ -418,6 +418,7 @@ app.get("/api/admin/social", authMiddleware, async (_req, res) => {
     console.error('[API] /api/admin/social error', err);
     res.status(500).json({ error: 'Server error' });
   }
+});
 
 app.post("/api/admin/social", authMiddleware, async (req, res) => {
   try {
