@@ -193,7 +193,7 @@ app.get("/api/portfolio", async (req, res) => {
 
     res.json({
       socialLinks,
-      projects,
+      projects: projects.map(projectToResponse),
       skills,
       posts,
       experiences,
@@ -211,9 +211,9 @@ app.get('/', (_req, res) => {
 });
 
 app.get("/api/projects/:id", async (req, res) => {
-  const project = await Project.findById(req.params.id);
+  const project = await Project.findById(req.params.id).lean();
   if (!project) return res.status(404).json({ error: "Not found" });
-  res.json(project);
+  res.json(projectToResponse(project));
 });
 
 app.get("/api/posts/:id", async (req, res) => {
@@ -223,8 +223,14 @@ app.get("/api/posts/:id", async (req, res) => {
 });
 
 app.post("/api/messages", async (req, res) => {
-  await Message.create(req.body);
-  res.json({ success: true });
+  try {
+    console.log('[API] POST /api/messages', req.body);
+    await Message.create(req.body);
+    res.json({ success: true });
+  } catch (err) {
+    console.error('[API] POST /api/messages error', err);
+    res.status(500).json({ error: 'Server error' });
+  }
 });
 
 /* ================= LOGIN ================= */
@@ -251,19 +257,55 @@ app.post("/api/login", async (req, res) => {
 
 /* ================= ADMIN CRUD ================= */
 
+
+const normalizeTags = (tags: any): string[] => {
+  if (Array.isArray(tags)) return tags;
+  if (typeof tags === 'string') {
+    return tags
+      .split(',')
+      .map(t => t.trim())
+      .filter(Boolean);
+  }
+  return [];
+};
+
+const projectToResponse = (p: any) => ({
+  ...p,
+  id: p._id,
+  tags: Array.isArray(p.tags) ? p.tags.join(',') : p.tags || ''
+});
+
 app.get("/api/admin/projects", authMiddleware, async (_req, res) => {
-  const items = await Project.find().sort({ createdAt: -1 }).lean();
-  res.json(items.map(item => ({ ...item, id: item._id })));
+  try {
+    const items = await Project.find().sort({ createdAt: -1 }).lean();
+    console.log('[API] /api/admin/projects retrieved', items.length);
+    res.json(items.map(projectToResponse));
+  } catch (err) {
+    console.error('[API] /api/admin/projects error', err);
+    res.status(500).json({ error: 'Server error' });
+  }
 });
 
 app.post("/api/admin/projects", authMiddleware, async (req, res) => {
-  await Project.create(req.body);
-  res.json({ success: true });
+  try {
+    const body = { ...req.body, tags: normalizeTags(req.body.tags) };
+    await Project.create(body);
+    res.json({ success: true });
+  } catch (err) {
+    console.error('[API] /api/admin/projects POST error', err);
+    res.status(500).json({ error: 'Server error' });
+  }
 });
 
 app.put("/api/admin/projects/:id", authMiddleware, async (req, res) => {
-  await Project.findByIdAndUpdate(req.params.id, req.body);
-  res.json({ success: true });
+  try {
+    const body = { ...req.body, tags: normalizeTags(req.body.tags) };
+    await Project.findByIdAndUpdate(req.params.id, body);
+    res.json({ success: true });
+  } catch (err) {
+    console.error('[API] /api/admin/projects PUT error', err);
+    res.status(500).json({ error: 'Server error' });
+  }
 });
 
 app.delete("/api/admin/projects/:id", authMiddleware, async (req, res) => {
@@ -282,13 +324,23 @@ app.get("/api/admin/skills", authMiddleware, async (_req, res) => {
 });
 
 app.post("/api/admin/skills", authMiddleware, async (req, res) => {
-  await Skill.create(req.body);
-  res.json({ success: true });
+  try {
+    await Skill.create(req.body);
+    res.json({ success: true });
+  } catch (err) {
+    console.error('[API] /api/admin/skills POST error', err);
+    res.status(500).json({ error: 'Server error' });
+  }
 });
 
 app.put("/api/admin/skills/:id", authMiddleware, async (req, res) => {
-  await Skill.findByIdAndUpdate(req.params.id, req.body);
-  res.json({ success: true });
+  try {
+    await Skill.findByIdAndUpdate(req.params.id, req.body);
+    res.json({ success: true });
+  } catch (err) {
+    console.error('[API] /api/admin/skills PUT error', err);
+    res.status(500).json({ error: 'Server error' });
+  }
 });
 
 app.delete("/api/admin/skills/:id", authMiddleware, async (req, res) => {
@@ -386,17 +438,22 @@ app.put("/api/admin/settings/:key", authMiddleware, async (req, res) => {
 
 // Analytics
 app.get("/api/admin/analytics", authMiddleware, async (_req, res) => {
-  const total = await Visitor.countDocuments();
-  const today = await Visitor.countDocuments({
-    visitedAt: { $gte: new Date(new Date().setHours(0, 0, 0, 0)) }
-  });
+  try {
+    const total = await Visitor.countDocuments();
+    const today = await Visitor.countDocuments({
+      visitedAt: { $gte: new Date(new Date().setHours(0, 0, 0, 0)) }
+    });
 
-  const byCountry = await Visitor.aggregate([
-    { $group: { _id: "$country", count: { $sum: 1 } } },
-    { $sort: { count: -1 } }
-  ]);
+    const byCountry = await Visitor.aggregate([
+      { $group: { _id: "$country", count: { $sum: 1 } } },
+      { $sort: { count: -1 } }
+    ]);
 
-  res.json({ total, today, byCountry });
+    res.json({ total, today, byCountry });
+  } catch (err) {
+    console.error('[API] /api/admin/analytics error', err);
+    res.status(500).json({ error: 'Server error' });
+  }
 });
 
 // Upload
