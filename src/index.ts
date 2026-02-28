@@ -252,8 +252,8 @@ app.post("/api/login", async (req, res) => {
 /* ================= ADMIN CRUD ================= */
 
 app.get("/api/admin/projects", authMiddleware, async (_req, res) => {
-  const items = await Project.find().sort({ createdAt: -1 });
-  res.json(items.map(item => ({ ...item.toObject(), id: item._id })));
+  const items = await Project.find().sort({ createdAt: -1 }).lean();
+  res.json(items.map(item => ({ ...item, id: item._id })));
 });
 
 app.post("/api/admin/projects", authMiddleware, async (req, res) => {
@@ -274,8 +274,7 @@ app.delete("/api/admin/projects/:id", authMiddleware, async (req, res) => {
 // Skills
 app.get("/api/admin/skills", authMiddleware, async (_req, res) => {
   try {
-    const items = await Skill.find();
-    res.json(items.map(item => ({ ...item.toObject(), id: item._id })));
+    const items = await Skill.find().lean();    console.log('[API] /api/admin/skills retrieved', items);    res.json(items.map(item => ({ ...item, id: item._id })));
   } catch (err) {
     console.error('[API] /api/admin/skills error', err);
     res.status(500).json({ error: 'Server error' });
