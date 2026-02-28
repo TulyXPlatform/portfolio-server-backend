@@ -123,13 +123,13 @@ const trackVisitor = async (req: Request) => {
 
     const browser = ua.includes("Chrome") ? "Chrome"
       : ua.includes("Firefox") ? "Firefox"
-      : ua.includes("Safari") ? "Safari"
-      : "Other";
+        : ua.includes("Safari") ? "Safari"
+          : "Other";
 
     const os = ua.includes("Windows") ? "Windows"
       : ua.includes("Mac") ? "macOS"
-      : ua.includes("Linux") ? "Linux"
-      : "Other";
+        : ua.includes("Linux") ? "Linux"
+          : "Other";
 
     await Visitor.create({
       ipAddress: ip,
@@ -142,8 +142,8 @@ const trackVisitor = async (req: Request) => {
       browser,
       os
     });
-  } catch {}
-  
+  } catch { }
+
 };
 
 /* ================= PUBLIC ================= */
@@ -335,7 +335,7 @@ app.put("/api/admin/settings/:key", authMiddleware, async (req, res) => {
 app.get("/api/admin/analytics", authMiddleware, async (_req, res) => {
   const total = await Visitor.countDocuments();
   const today = await Visitor.countDocuments({
-    visitedAt: { $gte: new Date(new Date().setHours(0,0,0,0)) }
+    visitedAt: { $gte: new Date(new Date().setHours(0, 0, 0, 0)) }
   });
 
   const byCountry = await Visitor.aggregate([

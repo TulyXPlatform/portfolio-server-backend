@@ -125,5 +125,5 @@ export async function seedData() {
 
 // allow the file to be executed directly or imported
 if (require.main === module) {
-  seedData();
+  seedData().then(() => process.exit(0)).catch(() => process.exit(1));
 }
