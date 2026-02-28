@@ -93,6 +93,12 @@ app.use(cors({
 
 app.use(express.json());
 
+// simple request logger for debugging deployments
+app.use((req, res, next) => {
+  console.log(`[API] ${req.method} ${req.originalUrl} from ${req.ip} origin=${req.headers.origin}`);
+  next();
+});
+
 // Content Security Policy (CSP) header — adjust origins as needed.
 app.use((req, res, next) => {
   const csp = [
@@ -349,14 +355,26 @@ app.delete("/api/admin/skills/:id", authMiddleware, async (req, res) => {
 });
 
 // Experiences
-app.get("/api/admin/experiences", authMiddleware, async (_req, res) => {
-  const items = await Experience.find();
-  res.json(items.map(item => ({ ...item.toObject(), id: item._id })));
+app_get_exps: app.get("/api/admin/experiences", authMiddleware, async (_req, res) => {
+  try {
+    const items = await Experience.find();
+    console.log('[API] /api/admin/experiences retrieved', items.length);
+    res.json(items.map(item => ({ ...item.toObject(), id: item._id })));
+  } catch (err) {
+    console.error('[API] /api/admin/experiences error', err);
+    res.status(500).json({ error: 'Server error' });
+  }
 });
 
 app.post("/api/admin/experiences", authMiddleware, async (req, res) => {
-  await Experience.create(req.body);
-  res.json({ success: true });
+  try {
+    console.log('[API] POST /api/admin/experiences', req.body);
+    await Experience.create(req.body);
+    res.json({ success: true });
+  } catch (err) {
+    console.error('[API] /api/admin/experiences POST error', err);
+    res.status(500).json({ error: 'Server error' });
+  }
 });
 
 app.put("/api/admin/experiences/:id", authMiddleware, async (req, res) => {
@@ -392,13 +410,24 @@ app.delete("/api/admin/posts/:id", authMiddleware, async (req, res) => {
 
 // Social
 app.get("/api/admin/social", authMiddleware, async (_req, res) => {
-  const items = await SocialLink.find();
-  res.json(items.map(item => ({ ...item.toObject(), id: item._id })));
-});
+  try {
+    const items = await SocialLink.find();
+    console.log('[API] /api/admin/social retrieved', items.length);
+    res.json(items.map(item => ({ ...item.toObject(), id: item._id }))); 
+  } catch (err) {
+    console.error('[API] /api/admin/social error', err);
+    res.status(500).json({ error: 'Server error' });
+  }
 
 app.post("/api/admin/social", authMiddleware, async (req, res) => {
-  await SocialLink.create(req.body);
-  res.json({ success: true });
+  try {
+    console.log('[API] POST /api/admin/social', req.body);
+    await SocialLink.create(req.body);
+    res.json({ success: true });
+  } catch (err) {
+    console.error('[API] /api/admin/social POST error', err);
+    res.status(500).json({ error: 'Server error' });
+  }
 });
 
 app.put("/api/admin/social/:id", authMiddleware, async (req, res) => {
