@@ -55,24 +55,34 @@ if (!process.env.JWT_SECRET) {
   console.warn("⚠️ JWT_SECRET not set; using default. Set JWT_SECRET in env for production.");
 }
 
-// Configure CORS to allow requests from deployed Vercel frontends
+// Configure CORS to allow requests from deployed Vercel frontends and localhost during dev
 const allowedOrigins = [
-  "http://localhost:5173",
-  "http://localhost:5174",
-  "https://localhost:5173",
-  "https://localhost:5174",
   process.env.PORTFOLIO_URL || "",
   process.env.ADMIN_URL || ""
 ].filter(Boolean);
 
 app.use(cors({
   origin: (origin, callback) => {
-    if (!origin || allowedOrigins.includes(origin)) {
+    // Allow no origin (e.g., mobile, Postman)
+    if (!origin) {
       callback(null, true);
-    } else {
-      console.log(`Blocked by CORS: ${origin}`);
-      callback(new Error("Not allowed by CORS"));
+      return;
     }
+
+    // Allow localhost/* for development (any port)
+    if (origin.startsWith("http://localhost:") || origin.startsWith("https://localhost:")) {
+      callback(null, true);
+      return;
+    }
+
+    // Check against deployed Vercel URLs from env vars
+    if (allowedOrigins.includes(origin)) {
+      callback(null, true);
+      return;
+    }
+
+    console.log(`Blocked by CORS: ${origin}`);
+    callback(new Error("Not allowed by CORS"));
   },
   credentials: true
 }));
