@@ -21,12 +21,31 @@ import Setting from "./models/Setting";
 import Visitor from "./models/Visitor";
 
 dotenv.config();
-connectDB();
+
+// connect to database (returns a promise so we can hook into it)
+connectDB().then(async () => {
+  // if you've set SEED_DB=true (e.g. on Render one‑off or locally), run seeder
+  if (process.env.SEED_DB === "true") {
+    const { seedData } = await import("./seed");
+    console.log("[DB] seeding because SEED_DB=true");
+    await seedData().catch(err => console.error("Seed error:", err));
+  }
+});
 
 const app = express();
 const JWT_SECRET = process.env.JWT_SECRET!;
 
-app.use(cors());
+app.use(cors({
+  origin: [
+    "http://localhost:5173",
+    "http://localhost:3000",
+    "https://portfolio-frontend-beta-nine.vercel.app",
+    "https://portfolio-admin-pearl.vercel.app"
+  ],
+  methods: ["GET", "POST", "PUT", "DELETE"],
+  credentials: true
+}));
+
 app.use(express.json());
 
 // uploads
@@ -72,13 +91,13 @@ const trackVisitor = async (req: Request) => {
 
     const browser = ua.includes("Chrome") ? "Chrome"
       : ua.includes("Firefox") ? "Firefox"
-      : ua.includes("Safari") ? "Safari"
-      : "Other";
+        : ua.includes("Safari") ? "Safari"
+          : "Other";
 
     const os = ua.includes("Windows") ? "Windows"
       : ua.includes("Mac") ? "macOS"
-      : ua.includes("Linux") ? "Linux"
-      : "Other";
+        : ua.includes("Linux") ? "Linux"
+          : "Other";
 
     await Visitor.create({
       ipAddress: ip,
@@ -91,33 +110,44 @@ const trackVisitor = async (req: Request) => {
       browser,
       os
     });
-  } catch {}
-  
+  } catch { }
+
 };
 
 /* ================= PUBLIC ================= */
 
 app.get("/api/portfolio", async (req, res) => {
+  console.log(`[API] GET /api/portfolio from ${req.ip} origin=${req.headers.origin} host=${req.headers.host}`);
   trackVisitor(req);
 
-  const [socialLinks, projects, skills, posts, experiences, settings] =
-    await Promise.all([
-      SocialLink.find(),
-      Project.find().sort({ createdAt: -1 }),
-      Skill.find(),
-      BlogPost.find().select("title summary coverImage createdAt"),
-      Experience.find(),
-      Setting.findOne({ keyName: "cvLink" })
-    ]);
+  try {
+    const [socialLinks, projects, skills, posts, experiences, settings] =
+      await Promise.all([
+        SocialLink.find(),
+        Project.find().sort({ createdAt: -1 }),
+        Skill.find(),
+        BlogPost.find().select("title summary coverImage createdAt"),
+        Experience.find(),
+        Setting.findOne({ keyName: "cvLink" })
+      ]);
 
-  res.json({
-    socialLinks,
-    projects,
-    skills,
-    posts,
-    experiences,
-    cvLink: settings?.value || "/cv.pdf"
-  });
+    res.json({
+      socialLinks,
+      projects,
+      skills,
+      posts,
+      experiences,
+      cvLink: settings?.value || "/cv.pdf"
+    });
+  } catch (err) {
+    console.error('[API] /api/portfolio error', err);
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
+// root info
+app.get('/', (_req, res) => {
+  res.send('Portfolio API — use /api/portfolio');
 });
 
 app.get("/api/projects/:id", async (req, res) => {
@@ -273,7 +303,7 @@ app.put("/api/admin/settings/:key", authMiddleware, async (req, res) => {
 app.get("/api/admin/analytics", authMiddleware, async (_req, res) => {
   const total = await Visitor.countDocuments();
   const today = await Visitor.countDocuments({
-    visitedAt: { $gte: new Date(new Date().setHours(0,0,0,0)) }
+    visitedAt: { $gte: new Date(new Date().setHours(0, 0, 0, 0)) }
   });
 
   const byCountry = await Visitor.aggregate([
