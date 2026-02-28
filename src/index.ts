@@ -272,7 +272,7 @@ const normalizeTags = (tags: any): string[] => {
 const projectToResponse = (p: any) => ({
   ...p,
   id: p._id,
-  tags: Array.isArray(p.tags) ? p.tags.join(',') : p.tags || ''
+  tags: normalizeTags(p.tags).join(',')
 });
 
 app.get("/api/admin/projects", authMiddleware, async (_req, res) => {
