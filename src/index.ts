@@ -55,11 +55,12 @@ if (!process.env.JWT_SECRET) {
   console.warn("⚠️ JWT_SECRET not set; using default. Set JWT_SECRET in env for production.");
 }
 
-// Configure CORS to allow requests from deployed Vercel frontends and localhost during dev
+// Configure CORS to allow requests from deployed frontends and localhost during dev
 const allowedOrigins = [
   process.env.PORTFOLIO_URL || "",
   process.env.ADMIN_URL || ""
 ].filter(Boolean);
+console.log('[CORS] allowed origins:', allowedOrigins.length ? allowedOrigins.join(', ') : '(none)');
 
 // CORS configuration with proper preflight handling
 app.use(cors({
@@ -76,7 +77,14 @@ app.use(cors({
       return;
     }
 
-    // Check against deployed Vercel URLs from env vars
+    // If no origins were configured, open up access (useful for quick deploys)
+    if (allowedOrigins.length === 0) {
+      console.warn('[CORS] no allowed origins configured, permitting any origin');
+      callback(null, true);
+      return;
+    }
+
+    // Check against deployed URLs from env vars
     if (allowedOrigins.includes(origin)) {
       callback(null, true);
       return;
