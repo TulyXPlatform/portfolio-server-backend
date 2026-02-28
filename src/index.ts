@@ -35,11 +35,25 @@ connectDB().then(async () => {
     } catch (err) {
       console.error("Failed to load seed module:", err);
     }
+  } else {
+    // if no users exist at all, create a default admin account so the panel can be accessed
+    try {
+      const userCount = await User.countDocuments();
+      if (userCount === 0) {
+        console.log("[DB] no users found, creating default admin");
+        await User.create({ username: 'admin', password: 'admin123' });
+      }
+    } catch (err) {
+      console.error("Error checking/creating default admin:", err);
+    }
   }
 });
 
 const app = express();
-const JWT_SECRET = process.env.JWT_SECRET!;
+const JWT_SECRET = process.env.JWT_SECRET || "dev-secret";
+if (!process.env.JWT_SECRET) {
+  console.warn("⚠️ JWT_SECRET not set; using default. Set JWT_SECRET in env for production.");
+}
 
 // Configure CORS to allow requests from deployed Vercel frontends
 const allowedOrigins = [
@@ -203,9 +217,13 @@ app.post("/api/messages", async (req, res) => {
 
 app.post("/api/login", async (req, res) => {
   const { username, password } = req.body;
+  console.log(`[API] login attempt for ${username}`);
 
   const user = await User.findOne({ username, password });
-  if (!user) return res.status(401).json({ error: "Invalid credentials" });
+  if (!user) {
+    console.log(`[API] login failed for ${username}`);
+    return res.status(401).json({ error: "Invalid credentials" });
+  }
 
   const token = jwt.sign(
     { id: user._id, username },
@@ -213,6 +231,7 @@ app.post("/api/login", async (req, res) => {
     { expiresIn: "7d" }
   );
 
+  console.log(`[API] login success for ${username}`);
   res.json({ success: true, token });
 });
 
