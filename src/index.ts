@@ -84,13 +84,20 @@ app.use(cors({
       return;
     }
 
-    // Check against deployed URLs from env vars
-    if (allowedOrigins.includes(origin)) {
+    // check for exact or prefix (ignore trailing slash mismatches)
+    const match = allowedOrigins.some(o => {
+      if (o === origin) return true;
+      // drop trailing slash from configured origin for comparison
+      const norm = o.endsWith('/') ? o.slice(0, -1) : o;
+      const origNorm = origin.endsWith('/') ? origin.slice(0, -1) : origin;
+      return origNorm === norm;
+    });
+    if (match) {
       callback(null, true);
       return;
     }
 
-    console.log(`Blocked by CORS: ${origin}`);
+    console.log(`[CORS] blocked origin: ${origin}. allowed: ${allowedOrigins.join(', ')}`);
     callback(new Error("Not allowed by CORS"));
   },
   credentials: true,
