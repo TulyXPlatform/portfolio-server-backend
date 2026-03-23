@@ -1,4 +1,5 @@
 import express, { Request, Response, NextFunction } from "express";
+import mongoose from "mongoose";
 import cors from "cors";
 import dotenv from "dotenv";
 import jwt from "jsonwebtoken";
@@ -158,41 +159,79 @@ const authMiddleware = (req: Request, res: Response, next: NextFunction) => {
 // visitor tracker
 const trackVisitor = async (req: Request) => {
   try {
-    const ip =
-      (req.headers["x-forwarded-for"] as string)?.split(",")[0] ||
-      req.socket.remoteAddress;
-
+    // Extract IP more reliably (supports proxy and IPv6 mapping)
+    const rawIp = req.ip || 
+                 (req.headers["x-forwarded-for"] as string)?.split(",")[0] || 
+                 req.socket.remoteAddress || 
+                 "";
+    
+    // Normalize IP (strip IPv6 mapping if present)
+    let ip = rawIp.replace(/^.*:([^:]+)$/, '$1');
+    if (ip === "1") ip = "127.0.0.1"; // Handle ::1 normalized to just 1
     if (!ip) return;
-    //the const geo line sometimes fails  on render. then we have to use this line instead of that
-    /*if (ip === "127.0.0.1" || ip === "::1") return;*/
 
-    const geo = await axios.get(`http://ip-api.com/json/${ip}`);
+    let country = "Unknown";
+    let countryCode = "UN";
+    let city = "Unknown";
+    let region = "Unknown";
+    let isp = "Internal";
+
+    // Detect if IP is local/private
+    const isLocal = ip === "127.0.0.1" || 
+                    ip === "::1" ||
+                    ip.startsWith("192.168.") || 
+                    ip.startsWith("10.") || 
+                    ip.startsWith("172.16.");
+    if (isLocal) {
+      country = "Localhost";
+      city = "Development";
+    } else {
+      try {
+        const geoResult = await axios.get(`http://ip-api.com/json/${ip}?fields=status,message,country,countryCode,city,regionName,isp`, { timeout: 3000 });
+        if (geoResult.data.status === "success") {
+          country = geoResult.data.country || "Unknown";
+          countryCode = geoResult.data.countryCode || "UN";
+          city = geoResult.data.city || "Unknown";
+          region = geoResult.data.regionName || "Unknown";
+          isp = geoResult.data.isp || "Unknown";
+        }
+      } catch (err) {
+        console.error("[GEO] failed for", ip, err.message);
+      }
+    }
 
     const ua = req.headers["user-agent"] || "";
+    
+    // Improved UA detection
+    let browser = "Other";
+    if (ua.includes("Firefox")) browser = "Firefox";
+    else if (ua.includes("Edg")) browser = "Edge";
+    else if (ua.includes("Chrome")) browser = "Chrome";
+    else if (ua.includes("Safari")) browser = "Safari";
+    else if (ua.includes("Trident")) browser = "IE";
 
-    const browser = ua.includes("Chrome") ? "Chrome"
-      : ua.includes("Firefox") ? "Firefox"
-        : ua.includes("Safari") ? "Safari"
-          : "Other";
-
-    const os = ua.includes("Windows") ? "Windows"
-      : ua.includes("Mac") ? "macOS"
-        : ua.includes("Linux") ? "Linux"
-          : "Other";
+    let os = "Other";
+    if (ua.includes("Windows")) os = "Windows";
+    else if (ua.includes("Android")) os = "Android";
+    else if (ua.includes("iPhone") || ua.includes("iPad")) os = "iOS";
+    else if (ua.includes("Mac")) os = "macOS";
+    else if (ua.includes("Linux")) os = "Linux";
 
     await Visitor.create({
       ipAddress: ip,
-      country: geo.data.country,
-      countryCode: geo.data.countryCode,
-      city: geo.data.city,
-      region: geo.data.regionName,
-      isp: geo.data.isp,
+      country,
+      countryCode,
+      city,
+      region,
+      isp,
       userAgent: ua,
       browser,
-      os
+      os,
+      visitedAt: new Date()
     });
-  } catch { }
-
+  } catch (err) {
+    console.error("[TRACKER] general error:", err.message);
+  }
 };
 
 /* ================= PUBLIC ================= */
@@ -213,11 +252,23 @@ app.get("/api/portfolio", async (req, res) => {
       ]);
 
     res.json({
-      socialLinks,
+      socialLinks: socialLinks.map(s => {
+        const obj = s.toObject();
+        return { ...obj, id: String(obj._id) };
+      }),
       projects: projects.map(projectToResponse),
-      skills,
-      posts,
-      experiences,
+      skills: skills.map(s => {
+        const obj = s.toObject();
+        return { ...obj, id: String(obj._id) };
+      }),
+      posts: posts.map(p => {
+        const obj = p.toObject();
+        return { ...obj, id: String(obj._id) };
+      }),
+      experiences: experiences.map(e => {
+        const obj = e.toObject();
+        return { ...obj, id: String(obj._id) };
+      }),
       cvLink: settings?.value || "/cv.pdf"
     });
   } catch (err) {
@@ -232,15 +283,32 @@ app.get('/', (_req, res) => {
 });
 
 app.get("/api/projects/:id", async (req, res) => {
-  const project = await Project.findById(req.params.id).lean();
-  if (!project) return res.status(404).json({ error: "Not found" });
-  res.json(projectToResponse(project));
+  try {
+    if (!mongoose.Types.ObjectId.isValid(req.params.id)) {
+      return res.status(404).json({ error: "Invalid ID format: " + req.params.id });
+    }
+    const project = await Project.findById(req.params.id).lean();
+    if (!project) {
+      return res.status(404).json({ error: "Project not found: " + req.params.id });
+    }
+    res.json(projectToResponse(project));
+  } catch (err: any) {
+    console.error(`[API] Error in /api/projects/:id:`, err);
+    res.status(500).json({ error: err.message || String(err) });
+  }
 });
 
 app.get("/api/posts/:id", async (req, res) => {
-  const post = await BlogPost.findById(req.params.id);
-  if (!post) return res.status(404).json({ error: "Not found" });
-  res.json(post);
+  try {
+    if (!mongoose.Types.ObjectId.isValid(req.params.id)) {
+      return res.status(404).json({ error: "Invalid ID format" });
+    }
+    const post = await BlogPost.findById(req.params.id);
+    if (!post) return res.status(404).json({ error: "Not found" });
+    res.json(post);
+  } catch (err) {
+    res.status(404).json({ error: "Not found" });
+  }
 });
 
 app.post("/api/messages", async (req, res) => {
@@ -290,11 +358,18 @@ const normalizeTags = (tags: any): string[] => {
   return [];
 };
 
-const projectToResponse = (p: any) => ({
-  ...p,
-  id: p._id,
-  tags: normalizeTags(p.tags).join(',')
-});
+const projectToResponse = (p: any) => {
+  const doc = p.toObject ? p.toObject() : (p._doc || p);
+  const tags = Array.isArray(doc.tags) ? doc.tags.join(',') : (doc.tags || "");
+  const images = Array.isArray(doc.images) ? doc.images.join(',') : (doc.images || "");
+
+  return {
+    ...doc,
+    id: String(doc._id || p._id),
+    tags,
+    images
+  };
+};
 
 app.get("/api/admin/projects", authMiddleware, async (_req, res) => {
   try {
@@ -337,7 +412,7 @@ app.delete("/api/admin/projects/:id", authMiddleware, async (req, res) => {
 // Skills
 app.get("/api/admin/skills", authMiddleware, async (_req, res) => {
   try {
-    const items = await Skill.find().lean();    console.log('[API] /api/admin/skills retrieved', items);    res.json(items.map(item => ({ ...item, id: item._id })));
+    const items = await Skill.find().lean(); console.log('[API] /api/admin/skills retrieved', items); res.json(items.map(item => ({ ...item, id: item._id })));
   } catch (err) {
     console.error('[API] /api/admin/skills error', err);
     res.status(500).json({ error: 'Server error' });
@@ -428,7 +503,7 @@ app.get("/api/admin/social", authMiddleware, async (_req, res) => {
   try {
     const items = await SocialLink.find();
     console.log('[API] /api/admin/social retrieved', items.length);
-    res.json(items.map(item => ({ ...item.toObject(), id: item._id }))); 
+    res.json(items.map(item => ({ ...item.toObject(), id: item._id })));
   } catch (err) {
     console.error('[API] /api/admin/social error', err);
     res.status(500).json({ error: 'Server error' });
@@ -489,12 +564,46 @@ app.get("/api/admin/analytics", authMiddleware, async (_req, res) => {
       visitedAt: { $gte: new Date(new Date().setHours(0, 0, 0, 0)) }
     });
 
-    const byCountry = await Visitor.aggregate([
-      { $group: { _id: "$country", count: { $sum: 1 } } },
-      { $sort: { count: -1 } }
+    const [byCountry, byBrowser, byOs, recent, daily] = await Promise.all([
+      Visitor.aggregate([
+        { $group: { _id: "$country", count: { $sum: 1 } } },
+        { $sort: { count: -1 } },
+        { $limit: 10 }
+      ]),
+      Visitor.aggregate([
+        { $group: { _id: "$browser", count: { $sum: 1 } } },
+        { $sort: { count: -1 } }
+      ]),
+      Visitor.aggregate([
+        { $group: { _id: "$os", count: { $sum: 1 } } },
+        { $sort: { count: -1 } }
+      ]),
+      Visitor.find().sort({ visitedAt: -1 }).limit(20).lean(),
+      Visitor.aggregate([
+        {
+          $match: {
+            visitedAt: { $gte: new Date(Date.now() - 30 * 24 * 60 * 60 * 1000) }
+          }
+        },
+        {
+          $group: {
+            _id: { $dateToString: { format: "%Y-%m-%d", date: "$visitedAt" } },
+            count: { $sum: 1 }
+          }
+        },
+        { $sort: { _id: 1 } }
+      ])
     ]);
 
-    res.json({ total, today, byCountry });
+    res.json({
+      total,
+      today,
+      byCountry: byCountry.map(c => ({ country: c._id, count: c.count })),
+      byBrowser: byBrowser.map(b => ({ browser: b._id, count: b.count })),
+      byOs: byOs.map(o => ({ os: o._id, count: o.count })),
+      recent: recent.map((v: any) => ({ ...v, id: String(v._id) })),
+      daily: daily.map(d => ({ date: d._id, count: d.count }))
+    });
   } catch (err) {
     console.error('[API] /api/admin/analytics error', err);
     res.status(500).json({ error: 'Server error' });

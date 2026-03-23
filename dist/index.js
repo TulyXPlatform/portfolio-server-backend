@@ -80,31 +80,77 @@ dotenv_1.default.config();
             console.error("Failed to load seed module:", err);
         }
     }
+    else {
+        // if no users exist at all, create a default admin account so the panel can be accessed
+        try {
+            const userCount = yield User_1.default.countDocuments();
+            if (userCount === 0) {
+                console.log("[DB] no users found, creating default admin");
+                yield User_1.default.create({ username: 'admin', password: 'admin123' });
+            }
+        }
+        catch (err) {
+            console.error("Error checking/creating default admin:", err);
+        }
+    }
 }));
 const app = (0, express_1.default)();
-const JWT_SECRET = process.env.JWT_SECRET;
-// Configure CORS to allow requests from deployed Vercel frontends
+const JWT_SECRET = process.env.JWT_SECRET || "dev-secret";
+if (!process.env.JWT_SECRET) {
+    console.warn("⚠️ JWT_SECRET not set; using default. Set JWT_SECRET in env for production.");
+}
+// Configure CORS to allow requests from deployed frontends and localhost during dev
 const allowedOrigins = [
-    "http://localhost:5173",
-    "http://localhost:5174",
-    "https://localhost:5173",
-    "https://localhost:5174",
     process.env.PORTFOLIO_URL || "",
     process.env.ADMIN_URL || ""
 ].filter(Boolean);
+console.log('[CORS] allowed origins:', allowedOrigins.length ? allowedOrigins.join(', ') : '(none)');
+// CORS configuration with proper preflight handling
 app.use((0, cors_1.default)({
     origin: (origin, callback) => {
-        if (!origin || allowedOrigins.includes(origin)) {
+        // Allow no origin (e.g., mobile, Postman)
+        if (!origin) {
             callback(null, true);
+            return;
         }
-        else {
-            console.log(`Blocked by CORS: ${origin}`);
-            callback(new Error("Not allowed by CORS"));
+        // Allow localhost/* for development (any port)
+        if (origin.startsWith("http://localhost:") || origin.startsWith("https://localhost:")) {
+            callback(null, true);
+            return;
         }
+        // If no origins were configured, open up access (useful for quick deploys)
+        if (allowedOrigins.length === 0) {
+            console.warn('[CORS] no allowed origins configured, permitting any origin');
+            callback(null, true);
+            return;
+        }
+        // check for exact or prefix (ignore trailing slash mismatches)
+        const match = allowedOrigins.some(o => {
+            if (o === origin)
+                return true;
+            // drop trailing slash from configured origin for comparison
+            const norm = o.endsWith('/') ? o.slice(0, -1) : o;
+            const origNorm = origin.endsWith('/') ? origin.slice(0, -1) : origin;
+            return origNorm === norm;
+        });
+        if (match) {
+            callback(null, true);
+            return;
+        }
+        console.log(`[CORS] blocked origin: ${origin}. allowed: ${allowedOrigins.join(', ')}`);
+        callback(new Error("Not allowed by CORS"));
     },
-    credentials: true
+    credentials: true,
+    allowedHeaders: ["Content-Type", "Authorization"],
+    methods: ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
+    maxAge: 3600
 }));
 app.use(express_1.default.json());
+// simple request logger for debugging deployments
+app.use((req, res, next) => {
+    console.log(`[API] ${req.method} ${req.originalUrl} from ${req.ip} origin=${req.headers.origin}`);
+    next();
+});
 // Content Security Policy (CSP) header — adjust origins as needed.
 app.use((req, res, next) => {
     const csp = [
@@ -193,11 +239,11 @@ app.get("/api/portfolio", (req, res) => __awaiter(void 0, void 0, void 0, functi
             Setting_1.default.findOne({ keyName: "cvLink" })
         ]);
         res.json({
-            socialLinks,
-            projects,
-            skills,
-            posts,
-            experiences,
+            socialLinks: socialLinks.map(s => (Object.assign(Object.assign({}, s.toObject()), { id: s._id }))),
+            projects: projects.map(projectToResponse),
+            skills: skills.map(s => (Object.assign(Object.assign({}, s.toObject()), { id: s._id }))),
+            posts: posts.map(p => (Object.assign(Object.assign({}, p.toObject()), { id: p._id }))),
+            experiences: experiences.map(e => (Object.assign(Object.assign({}, e.toObject()), { id: e._id }))),
             cvLink: (settings === null || settings === void 0 ? void 0 : settings.value) || "/cv.pdf"
         });
     }
@@ -211,41 +257,99 @@ app.get('/', (_req, res) => {
     res.send('Portfolio API — use /api/portfolio');
 });
 app.get("/api/projects/:id", (req, res) => __awaiter(void 0, void 0, void 0, function* () {
-    const project = yield Project_1.default.findById(req.params.id);
-    if (!project)
-        return res.status(404).json({ error: "Not found" });
-    res.json(project);
+    try {
+        const project = yield Project_1.default.findById(req.params.id).lean();
+        if (!project)
+            return res.status(404).json({ error: "Not found" });
+        res.json(projectToResponse(project));
+    }
+    catch (err) {
+        res.status(404).json({ error: "Not found" });
+    }
 }));
 app.get("/api/posts/:id", (req, res) => __awaiter(void 0, void 0, void 0, function* () {
-    const post = yield BlogPost_1.default.findById(req.params.id);
-    if (!post)
-        return res.status(404).json({ error: "Not found" });
-    res.json(post);
+    try {
+        const post = yield BlogPost_1.default.findById(req.params.id);
+        if (!post)
+            return res.status(404).json({ error: "Not found" });
+        res.json(post);
+    }
+    catch (err) {
+        res.status(404).json({ error: "Not found" });
+    }
 }));
 app.post("/api/messages", (req, res) => __awaiter(void 0, void 0, void 0, function* () {
-    yield Message_1.default.create(req.body);
-    res.json({ success: true });
+    try {
+        console.log('[API] POST /api/messages', req.body);
+        yield Message_1.default.create(req.body);
+        res.json({ success: true });
+    }
+    catch (err) {
+        console.error('[API] POST /api/messages error', err);
+        res.status(500).json({ error: 'Server error' });
+    }
 }));
 /* ================= LOGIN ================= */
 app.post("/api/login", (req, res) => __awaiter(void 0, void 0, void 0, function* () {
     const { username, password } = req.body;
+    console.log(`[API] login attempt for ${username}`);
     const user = yield User_1.default.findOne({ username, password });
-    if (!user)
+    if (!user) {
+        console.log(`[API] login failed for ${username}`);
         return res.status(401).json({ error: "Invalid credentials" });
+    }
     const token = jsonwebtoken_1.default.sign({ id: user._id, username }, JWT_SECRET, { expiresIn: "7d" });
+    console.log(`[API] login success for ${username}`);
     res.json({ success: true, token });
 }));
 /* ================= ADMIN CRUD ================= */
+const normalizeTags = (tags) => {
+    if (Array.isArray(tags))
+        return tags;
+    if (typeof tags === 'string') {
+        return tags
+            .split(',')
+            .map(t => t.trim())
+            .filter(Boolean);
+    }
+    return [];
+};
+const projectToResponse = (p) => {
+    const doc = p._doc || p; // Handle both lean and full Mongoose docs
+    return Object.assign(Object.assign({}, doc), { id: doc._id || p._id, tags: normalizeTags(doc.tags).join(',') });
+};
 app.get("/api/admin/projects", authMiddleware, (_req, res) => __awaiter(void 0, void 0, void 0, function* () {
-    res.json(yield Project_1.default.find().sort({ createdAt: -1 }));
+    try {
+        const items = yield Project_1.default.find().sort({ createdAt: -1 }).lean();
+        console.log('[API] /api/admin/projects retrieved', items.length);
+        res.json(items.map(projectToResponse));
+    }
+    catch (err) {
+        console.error('[API] /api/admin/projects error', err);
+        res.status(500).json({ error: 'Server error' });
+    }
 }));
 app.post("/api/admin/projects", authMiddleware, (req, res) => __awaiter(void 0, void 0, void 0, function* () {
-    yield Project_1.default.create(req.body);
-    res.json({ success: true });
+    try {
+        const body = Object.assign(Object.assign({}, req.body), { tags: normalizeTags(req.body.tags) });
+        yield Project_1.default.create(body);
+        res.json({ success: true });
+    }
+    catch (err) {
+        console.error('[API] /api/admin/projects POST error', err);
+        res.status(500).json({ error: 'Server error' });
+    }
 }));
 app.put("/api/admin/projects/:id", authMiddleware, (req, res) => __awaiter(void 0, void 0, void 0, function* () {
-    yield Project_1.default.findByIdAndUpdate(req.params.id, req.body);
-    res.json({ success: true });
+    try {
+        const body = Object.assign(Object.assign({}, req.body), { tags: normalizeTags(req.body.tags) });
+        yield Project_1.default.findByIdAndUpdate(req.params.id, body);
+        res.json({ success: true });
+    }
+    catch (err) {
+        console.error('[API] /api/admin/projects PUT error', err);
+        res.status(500).json({ error: 'Server error' });
+    }
 }));
 app.delete("/api/admin/projects/:id", authMiddleware, (req, res) => __awaiter(void 0, void 0, void 0, function* () {
     yield Project_1.default.findByIdAndDelete(req.params.id);
@@ -253,27 +357,62 @@ app.delete("/api/admin/projects/:id", authMiddleware, (req, res) => __awaiter(vo
 }));
 // Skills
 app.get("/api/admin/skills", authMiddleware, (_req, res) => __awaiter(void 0, void 0, void 0, function* () {
-    res.json(yield Skill_1.default.find());
+    try {
+        const items = yield Skill_1.default.find().lean();
+        console.log('[API] /api/admin/skills retrieved', items);
+        res.json(items.map(item => (Object.assign(Object.assign({}, item), { id: item._id }))));
+    }
+    catch (err) {
+        console.error('[API] /api/admin/skills error', err);
+        res.status(500).json({ error: 'Server error' });
+    }
 }));
 app.post("/api/admin/skills", authMiddleware, (req, res) => __awaiter(void 0, void 0, void 0, function* () {
-    yield Skill_1.default.create(req.body);
-    res.json({ success: true });
+    try {
+        yield Skill_1.default.create(req.body);
+        res.json({ success: true });
+    }
+    catch (err) {
+        console.error('[API] /api/admin/skills POST error', err);
+        res.status(500).json({ error: 'Server error' });
+    }
 }));
 app.put("/api/admin/skills/:id", authMiddleware, (req, res) => __awaiter(void 0, void 0, void 0, function* () {
-    yield Skill_1.default.findByIdAndUpdate(req.params.id, req.body);
-    res.json({ success: true });
+    try {
+        yield Skill_1.default.findByIdAndUpdate(req.params.id, req.body);
+        res.json({ success: true });
+    }
+    catch (err) {
+        console.error('[API] /api/admin/skills PUT error', err);
+        res.status(500).json({ error: 'Server error' });
+    }
 }));
 app.delete("/api/admin/skills/:id", authMiddleware, (req, res) => __awaiter(void 0, void 0, void 0, function* () {
     yield Skill_1.default.findByIdAndDelete(req.params.id);
     res.json({ success: true });
 }));
 // Experiences
-app.get("/api/admin/experiences", authMiddleware, (_req, res) => __awaiter(void 0, void 0, void 0, function* () {
-    res.json(yield Experience_1.default.find());
+app_get_exps: app.get("/api/admin/experiences", authMiddleware, (_req, res) => __awaiter(void 0, void 0, void 0, function* () {
+    try {
+        const items = yield Experience_1.default.find();
+        console.log('[API] /api/admin/experiences retrieved', items.length);
+        res.json(items.map(item => (Object.assign(Object.assign({}, item.toObject()), { id: item._id }))));
+    }
+    catch (err) {
+        console.error('[API] /api/admin/experiences error', err);
+        res.status(500).json({ error: 'Server error' });
+    }
 }));
 app.post("/api/admin/experiences", authMiddleware, (req, res) => __awaiter(void 0, void 0, void 0, function* () {
-    yield Experience_1.default.create(req.body);
-    res.json({ success: true });
+    try {
+        console.log('[API] POST /api/admin/experiences', req.body);
+        yield Experience_1.default.create(req.body);
+        res.json({ success: true });
+    }
+    catch (err) {
+        console.error('[API] /api/admin/experiences POST error', err);
+        res.status(500).json({ error: 'Server error' });
+    }
 }));
 app.put("/api/admin/experiences/:id", authMiddleware, (req, res) => __awaiter(void 0, void 0, void 0, function* () {
     yield Experience_1.default.findByIdAndUpdate(req.params.id, req.body);
@@ -285,7 +424,8 @@ app.delete("/api/admin/experiences/:id", authMiddleware, (req, res) => __awaiter
 }));
 // Blog posts
 app.get("/api/admin/posts", authMiddleware, (_req, res) => __awaiter(void 0, void 0, void 0, function* () {
-    res.json(yield BlogPost_1.default.find());
+    const items = yield BlogPost_1.default.find();
+    res.json(items.map(item => (Object.assign(Object.assign({}, item.toObject()), { id: item._id }))));
 }));
 app.post("/api/admin/posts", authMiddleware, (req, res) => __awaiter(void 0, void 0, void 0, function* () {
     yield BlogPost_1.default.create(req.body);
@@ -301,11 +441,26 @@ app.delete("/api/admin/posts/:id", authMiddleware, (req, res) => __awaiter(void 
 }));
 // Social
 app.get("/api/admin/social", authMiddleware, (_req, res) => __awaiter(void 0, void 0, void 0, function* () {
-    res.json(yield SocialLink_1.default.find());
+    try {
+        const items = yield SocialLink_1.default.find();
+        console.log('[API] /api/admin/social retrieved', items.length);
+        res.json(items.map(item => (Object.assign(Object.assign({}, item.toObject()), { id: item._id }))));
+    }
+    catch (err) {
+        console.error('[API] /api/admin/social error', err);
+        res.status(500).json({ error: 'Server error' });
+    }
 }));
 app.post("/api/admin/social", authMiddleware, (req, res) => __awaiter(void 0, void 0, void 0, function* () {
-    yield SocialLink_1.default.create(req.body);
-    res.json({ success: true });
+    try {
+        console.log('[API] POST /api/admin/social', req.body);
+        yield SocialLink_1.default.create(req.body);
+        res.json({ success: true });
+    }
+    catch (err) {
+        console.error('[API] /api/admin/social POST error', err);
+        res.status(500).json({ error: 'Server error' });
+    }
 }));
 app.put("/api/admin/social/:id", authMiddleware, (req, res) => __awaiter(void 0, void 0, void 0, function* () {
     yield SocialLink_1.default.findByIdAndUpdate(req.params.id, req.body);
@@ -313,6 +468,15 @@ app.put("/api/admin/social/:id", authMiddleware, (req, res) => __awaiter(void 0,
 }));
 app.delete("/api/admin/social/:id", authMiddleware, (req, res) => __awaiter(void 0, void 0, void 0, function* () {
     yield SocialLink_1.default.findByIdAndDelete(req.params.id);
+    res.json({ success: true });
+}));
+// Messages
+app.get("/api/admin/messages", authMiddleware, (_req, res) => __awaiter(void 0, void 0, void 0, function* () {
+    const messages = yield Message_1.default.find().sort({ createdAt: -1 });
+    res.json(messages.map(msg => (Object.assign(Object.assign({}, msg.toObject()), { id: msg._id }))));
+}));
+app.delete("/api/admin/messages/:id", authMiddleware, (req, res) => __awaiter(void 0, void 0, void 0, function* () {
+    yield Message_1.default.findByIdAndDelete(req.params.id);
     res.json({ success: true });
 }));
 // Settings
@@ -325,15 +489,21 @@ app.put("/api/admin/settings/:key", authMiddleware, (req, res) => __awaiter(void
 }));
 // Analytics
 app.get("/api/admin/analytics", authMiddleware, (_req, res) => __awaiter(void 0, void 0, void 0, function* () {
-    const total = yield Visitor_1.default.countDocuments();
-    const today = yield Visitor_1.default.countDocuments({
-        visitedAt: { $gte: new Date(new Date().setHours(0, 0, 0, 0)) }
-    });
-    const byCountry = yield Visitor_1.default.aggregate([
-        { $group: { _id: "$country", count: { $sum: 1 } } },
-        { $sort: { count: -1 } }
-    ]);
-    res.json({ total, today, byCountry });
+    try {
+        const total = yield Visitor_1.default.countDocuments();
+        const today = yield Visitor_1.default.countDocuments({
+            visitedAt: { $gte: new Date(new Date().setHours(0, 0, 0, 0)) }
+        });
+        const byCountry = yield Visitor_1.default.aggregate([
+            { $group: { _id: "$country", count: { $sum: 1 } } },
+            { $sort: { count: -1 } }
+        ]);
+        res.json({ total, today, byCountry });
+    }
+    catch (err) {
+        console.error('[API] /api/admin/analytics error', err);
+        res.status(500).json({ error: 'Server error' });
+    }
 }));
 // Upload
 app.post("/api/upload", authMiddleware, upload.single("file"), (req, res) => {
@@ -346,3 +516,4 @@ const PORT = Number(process.env.PORT) || 5000;
 app.listen(PORT, () => {
     console.log(`🚀 API running on http://localhost:${PORT}`);
 });
+// end of file - ensures no hidden characters confuse TypeScript

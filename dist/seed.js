@@ -48,12 +48,12 @@ function seedData() {
             });
             // ================= SOCIAL LINKS =================
             yield SocialLink_1.default.insertMany([
-                { platform: "github", url: "https://github.com/" },
-                { platform: "linkedin", url: "https://linkedin.com/in/" },
+                { platform: "github", url: "https://github.com/TulyXPlatform/" },
+                { platform: "linkedin", url: "https://linkedin.com/in/tamima-mollick-tuly/" },
                 { platform: "bdjobs", url: "https://bdjobs.com/" },
-                { platform: "facebook", url: "https://facebook.com/" },
-                { platform: "gmail", url: "mailto:your@gmail.com" },
-                { platform: "whatsapp", url: "https://wa.me/880" }
+                { platform: "facebook", url: "https://facebook.com/tamimamollicktuly" },
+                { platform: "gmail", url: "mailto:tamima.web5202@gmail.com" },
+                { platform: "whatsapp", url: "https://wa.me/8801403810202" }
             ]);
             // ================= SETTINGS =================
             yield Setting_1.default.create({
@@ -129,5 +129,5 @@ function seedData() {
 }
 // allow the file to be executed directly or imported
 if (require.main === module) {
-    seedData();
+    seedData().then(() => process.exit(0)).catch(() => process.exit(1));
 }

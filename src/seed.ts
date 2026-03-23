@@ -38,12 +38,12 @@ export async function seedData() {
 
     // ================= SOCIAL LINKS =================
     await SocialLink.insertMany([
-      { platform: "github", url: "https://github.com/" },
-      { platform: "linkedin", url: "https://linkedin.com/in/" },
+      { platform: "github", url: "https://github.com/TulyXPlatform/" },
+      { platform: "linkedin", url: "https://linkedin.com/in/tamima-mollick-tuly/" },
       { platform: "bdjobs", url: "https://bdjobs.com/" },
-      { platform: "facebook", url: "https://facebook.com/" },
-      { platform: "gmail", url: "mailto:your@gmail.com" },
-      { platform: "whatsapp", url: "https://wa.me/880" }
+      { platform: "facebook", url: "https://facebook.com/tamimamollicktuly" },
+      { platform: "gmail", url: "mailto:tamima.web5202@gmail.com" },
+      { platform: "whatsapp", url: "https://wa.me/8801403810202" }
     ]);
 
     // ================= SETTINGS =================
@@ -90,15 +90,35 @@ export async function seedData() {
     });
 
     // ================= PROJECT =================
-    await Project.create({
-      title: "Portfolio Website",
-      shortDescription: "My personal portfolio built with React & ASP.NET",
-      description: "Full-stack portfolio with seasonal themes, admin panel, and MS SQL backend.",
-      image: "",
-      liveLink: "#",
-      githubLink: "https://github.com/",
-      tags: ["React", "TypeScript", "Node.js"]
-    });
+    await Project.insertMany([
+      {
+        title: "Portfolio Website",
+        shortDescription: "Personal portfolio built with React & ASP.NET",
+        description: "Full-stack portfolio with seasonal themes, admin panel, and MongoDB backend.",
+        image: "https://images.unsplash.com/photo-1507238692062-5a0225d3111b?ixlib=rb-4.0.3&auto=format&fit=crop&w=1000&q=80",
+        liveLink: "#",
+        githubLink: "https://github.com/TulyXPlatform/",
+        tags: ["React", "TypeScript", "Node.js"]
+      },
+      {
+        title: "E-Commerce Platform",
+        shortDescription: "Modern shopping experience with cart and checkout",
+        description: "A complete e-commerce solution featuring product catalog, user authentication, shopping cart, and mock payment gateway integration.",
+        image: "https://images.unsplash.com/photo-1557821552-17105176677c?ixlib=rb-4.0.3&auto=format&fit=crop&w=1000&q=80",
+        liveLink: "#",
+        githubLink: "https://github.com/TulyXPlatform/ecommerce",
+        tags: ["ASP.NET Core", "Angular", "MS SQL"]
+      },
+      {
+        title: "Task Management App",
+        shortDescription: "Cross-platform task tracker for productivity",
+        description: "A kanban-style task management application that syncs across devices, helping teams organize their workflow effectively.",
+        image: "https://images.unsplash.com/photo-1454165804606-c3d57bc86b40?ixlib=rb-4.0.3&auto=format&fit=crop&w=1000&q=80",
+        liveLink: "#",
+        githubLink: "https://github.com/TulyXPlatform/task-manager",
+        tags: ["MAUI", "C#", "Firebase"]
+      }
+    ]);
 
     // ================= BLOG POSTS =================
     await BlogPost.insertMany([
