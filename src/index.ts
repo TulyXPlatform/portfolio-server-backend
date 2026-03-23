@@ -121,10 +121,10 @@ app.use((req, res, next) => {
     "default-src 'self'",
     "script-src 'self' https://cdn.jsdelivr.net",
     "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com https://cdn.jsdelivr.net",
-    "img-src 'self' data: blob: https://cdn.jsdelivr.net",
+    "img-src 'self' data: blob: https://cdn.jsdelivr.net https://*.unsplash.com",
     "connect-src 'self' http://localhost:5000 ws://localhost:5175 https://api.ipify.org https://ip-api.com",
     "font-src 'self' https://fonts.gstatic.com https://cdn.jsdelivr.net",
-    "frame-src 'none'"
+    "frame-src http: https:"
   ].join('; ');
   res.setHeader('Content-Security-Policy', csp);
   next();
