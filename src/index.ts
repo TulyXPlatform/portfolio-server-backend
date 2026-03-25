@@ -51,6 +51,7 @@ connectDB().then(async () => {
 });
 
 const app = express();
+app.set("trust proxy", true); // Fully trust proxies (required for cloud deployments)
 const JWT_SECRET = process.env.JWT_SECRET || "dev-secret";
 if (!process.env.JWT_SECRET) {
   console.warn("⚠️ JWT_SECRET not set; using default. Set JWT_SECRET in env for production.");
@@ -156,83 +157,98 @@ const authMiddleware = (req: Request, res: Response, next: NextFunction) => {
   }
 };
 
-// visitor tracker
 const trackVisitor = async (req: Request) => {
   try {
-    // Extract IP more reliably (supports proxy and IPv6 mapping)
-    const rawIp = req.ip || 
-                 (req.headers["x-forwarded-for"] as string)?.split(",")[0] || 
-                 req.socket.remoteAddress || 
-                 "";
+    const xff = req.headers["x-forwarded-for"];
+    const xri = req.headers["x-real-ip"];
+    let ip = (Array.isArray(xff) ? xff[0] : (xff as string)?.split(",")[0]) || 
+             (Array.isArray(xri) ? xri[0] : (xri as string)) || 
+             req.ip || 
+             req.socket.remoteAddress || 
+             "127.0.0.1";
     
-    // Normalize IP (strip IPv6 mapping if present)
-    let ip = rawIp.replace(/^.*:([^:]+)$/, '$1');
-    if (ip === "1") ip = "127.0.0.1"; // Handle ::1 normalized to just 1
-    if (!ip) return;
+    if (ip.startsWith("::ffff:")) ip = ip.split(":").pop() || "127.0.0.1";
+    if (ip === "::1" || ip === "1") ip = "127.0.0.1";
 
-    let country = "Unknown";
-    let countryCode = "UN";
-    let city = "Unknown";
-    let region = "Unknown";
-    let isp = "Internal";
+    console.log(`[TRACKER] visit: ${ip} | raw: ${req.ip} | UA: ${req.headers["user-agent"]}`);
 
-    // Detect if IP is local/private
-    const isLocal = ip === "127.0.0.1" || 
-                    ip === "::1" ||
-                    ip.startsWith("192.168.") || 
-                    ip.startsWith("10.") || 
-                    ip.startsWith("172.16.");
-    if (isLocal) {
-      country = "Localhost";
-      city = "Development";
-    } else {
+    let country = "Unknown", countryCode = "UN", city = "Unknown", region = "Unknown", isp = "Internal";
+
+    const isLocal = ip === "127.0.0.1" || ip.startsWith("192.168.") || ip.startsWith("10.") || /^(172\.(1[6-9]|2[0-9]|3[0-1])\.)/.test(ip); 
+    try {
+      // WATERFALL GEOLOCATION: Try multiple services until one works
+      let geoSuccess = false;
+
+      // 1. Primary: ipapi.co (HTTPS)
       try {
-        const geoResult = await axios.get(`http://ip-api.com/json/${ip}?fields=status,message,country,countryCode,city,regionName,isp`, { timeout: 3000 });
-        if (geoResult.data.status === "success") {
-          country = geoResult.data.country || "Unknown";
-          countryCode = geoResult.data.countryCode || "UN";
-          city = geoResult.data.city || "Unknown";
-          region = geoResult.data.regionName || "Unknown";
-          isp = geoResult.data.isp || "Unknown";
+        const queryUrl = isLocal ? "https://ipapi.co/json/" : `https://ipapi.co/${ip}/json/`;
+        const res = await axios.get(queryUrl, { timeout: 6000 });
+        if (res.data && !res.data.error) {
+          country = res.data.country_name || country;
+          city = res.data.city || city;
+          isp = res.data.org || isp;
+          // IMPORTANT: Removed the line that was overwriting 'ip' here
+          geoSuccess = true;
+          console.log(`[GEO] Success via ipapi.co: ${city}, ${country}`);
         }
-      } catch (err) {
-        console.error("[GEO] failed for", ip, err.message);
+      } catch (e) { /* ignore and try next */ }
+
+      // 2. Secondary: ip-api.com (HTTP)
+      if (!geoSuccess) {
+        try {
+          const queryHost = isLocal ? "" : ip;
+          const res = await axios.get(`http://ip-api.com/json/${queryHost}?fields=status,country,city`, { timeout: 6000 });
+          if (res.data.status === "success") {
+            country = res.data.country || country;
+            city = res.data.city || city;
+            // IMPORTANT: Removed the line that was overwriting 'ip' here
+            geoSuccess = true;
+            console.log(`[GEO] Success via ip-api.com: ${city}, ${country}`);
+          }
+        } catch (e) { /* ignore and try next */ }
       }
+
+      // 3. Last Resort fallback labels
+      if (!geoSuccess && isLocal) {
+        country = "Localhost"; city = "Development";
+      }
+    } catch (err: any) {
+      console.error(`[GEO] All attempts failed for ${ip}`);
     }
 
     const ua = req.headers["user-agent"] || "";
-    
-    // Improved UA detection
-    let browser = "Other";
+    let browser = "Other", os = "Other";
     if (ua.includes("Firefox")) browser = "Firefox";
     else if (ua.includes("Edg")) browser = "Edge";
     else if (ua.includes("Chrome")) browser = "Chrome";
     else if (ua.includes("Safari")) browser = "Safari";
-    else if (ua.includes("Trident")) browser = "IE";
-
-    let os = "Other";
     if (ua.includes("Windows")) os = "Windows";
     else if (ua.includes("Android")) os = "Android";
     else if (ua.includes("iPhone") || ua.includes("iPad")) os = "iOS";
     else if (ua.includes("Mac")) os = "macOS";
     else if (ua.includes("Linux")) os = "Linux";
 
-    await Visitor.create({
-      ipAddress: ip,
-      country,
-      countryCode,
-      city,
-      region,
-      isp,
-      userAgent: ua,
-      browser,
-      os,
-      visitedAt: new Date()
+    const v = await Visitor.create({ 
+      ipAddress: ip, 
+      country, 
+      countryCode, 
+      city, 
+      region, 
+      isp, 
+      userAgent: ua, 
+      browser, 
+      os, 
+      visitedAt: new Date() 
     });
-  } catch (err) {
-    console.error("[TRACKER] general error:", err.message);
+    console.log(`[TRACKER] SAVED to DB: ID=${v._id} | IP=${ip} | LOC=${city}, ${country}`);
+  } catch (err: any) {
+    console.error(`[TRACKER] ERROR: ${err.message}`);
   }
 };
+
+app.get("/api/debug-ip", (req, res) => {
+  res.json({ ip: req.ip, headers: req.headers, socket: req.socket.remoteAddress });
+});
 
 /* ================= PUBLIC ================= */
 
@@ -594,7 +610,7 @@ app.get("/api/admin/analytics", authMiddleware, async (_req, res) => {
         { $sort: { _id: 1 } }
       ])
     ]);
-
+    console.log(`[API] Analytics data fetched: ${total} total, showing ${recent.length} recent`);
     res.json({
       total,
       today,
