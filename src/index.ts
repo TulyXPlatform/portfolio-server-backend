@@ -659,6 +659,17 @@ app.get("/api/admin/analytics", authMiddleware, async (_req, res) => {
         { $sort: { _id: 1 } }
       ])
     ]);
+    // Pad the last 30 days with zeros so the chart doesn't look flat or empty
+    const last30Days: Record<string, number> = {};
+    for (let i = 29; i >= 0; i--) {
+        const d = new Date();
+        d.setDate(d.getDate() - i);
+        const key = d.toISOString().split('T')[0];
+        last30Days[key] = 0;
+    }
+    daily.forEach(d => { if (last30Days[d._id]) last30Days[d._id] = d.count; });
+    const paddedDaily = Object.entries(last30Days).map(([date, count]) => ({ date, count }));
+
     console.log(`[API] Analytics data fetched: ${total} total, showing ${recent.length} recent`);
     res.json({
       total,
@@ -667,7 +678,7 @@ app.get("/api/admin/analytics", authMiddleware, async (_req, res) => {
       byBrowser: byBrowser.map(b => ({ browser: b._id, count: b.count })),
       byOs: byOs.map(o => ({ os: o._id, count: o.count })),
       recent: recent.map((v: any) => ({ ...v, id: String(v._id) })),
-      daily: daily.map(d => ({ date: d._id, count: d.count }))
+      daily: paddedDaily
     });
   } catch (err) {
     console.error('[API] /api/admin/analytics error', err);
