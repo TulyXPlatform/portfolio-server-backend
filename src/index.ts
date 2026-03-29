@@ -667,7 +667,9 @@ app.get("/api/admin/analytics", authMiddleware, async (_req, res) => {
         const key = d.toISOString().split('T')[0];
         last30Days[key] = 0;
     }
-    daily.forEach(d => { if (last30Days[d._id]) last30Days[d._id] = d.count; });
+    daily.forEach(d => { 
+        if (d._id in last30Days) last30Days[d._id] = d.count; 
+    });
     const paddedDaily = Object.entries(last30Days).map(([date, count]) => ({ date, count }));
 
     console.log(`[API] Analytics data fetched: ${total} total, showing ${recent.length} recent`);
