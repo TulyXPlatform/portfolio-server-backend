@@ -22,6 +22,7 @@ import Setting from "./models/Setting";
 import Visitor from "./models/Visitor";
 
 dotenv.config();
+console.log("🚀 Server starting with LATEST code including /api/cv/download...");
 
 // connect to database (returns a promise so we can hook into it)
 connectDB().then(async () => {
@@ -161,12 +162,12 @@ const trackVisitor = async (req: Request) => {
   try {
     const xff = req.headers["x-forwarded-for"];
     const xri = req.headers["x-real-ip"];
-    let ip = (Array.isArray(xff) ? xff[0] : (xff as string)?.split(",")[0]) || 
-             (Array.isArray(xri) ? xri[0] : (xri as string)) || 
-             req.ip || 
-             req.socket.remoteAddress || 
-             "127.0.0.1";
-    
+    let ip = (Array.isArray(xff) ? xff[0] : (xff as string)?.split(",")[0]) ||
+      (Array.isArray(xri) ? xri[0] : (xri as string)) ||
+      req.ip ||
+      req.socket.remoteAddress ||
+      "127.0.0.1";
+
     if (ip.startsWith("::ffff:")) ip = ip.split(":").pop() || "127.0.0.1";
     if (ip === "::1" || ip === "1") ip = "127.0.0.1";
 
@@ -174,7 +175,7 @@ const trackVisitor = async (req: Request) => {
 
     let country = "Unknown", countryCode = "UN", city = "Unknown", region = "Unknown", isp = "Internal";
 
-    const isLocal = ip === "127.0.0.1" || ip.startsWith("192.168.") || ip.startsWith("10.") || /^(172\.(1[6-9]|2[0-9]|3[0-1])\.)/.test(ip); 
+    const isLocal = ip === "127.0.0.1" || ip.startsWith("192.168.") || ip.startsWith("10.") || /^(172\.(1[6-9]|2[0-9]|3[0-1])\.)/.test(ip);
     try {
       // WATERFALL GEOLOCATION: Try multiple services until one works
       let geoSuccess = false;
@@ -228,17 +229,17 @@ const trackVisitor = async (req: Request) => {
     else if (ua.includes("Mac")) os = "macOS";
     else if (ua.includes("Linux")) os = "Linux";
 
-    const v = await Visitor.create({ 
-      ipAddress: ip, 
-      country, 
-      countryCode, 
-      city, 
-      region, 
-      isp, 
-      userAgent: ua, 
-      browser, 
-      os, 
-      visitedAt: new Date() 
+    const v = await Visitor.create({
+      ipAddress: ip,
+      country,
+      countryCode,
+      city,
+      region,
+      isp,
+      userAgent: ua,
+      browser,
+      os,
+      visitedAt: new Date()
     });
     console.log(`[TRACKER] SAVED to DB: ID=${v._id} | IP=${ip} | LOC=${city}, ${country}`);
   } catch (err: any) {
@@ -248,6 +249,50 @@ const trackVisitor = async (req: Request) => {
 
 app.get("/api/debug-ip", (req, res) => {
   res.json({ ip: req.ip, headers: req.headers, socket: req.socket.remoteAddress });
+});
+
+/* ================= DOWNLOADS ================= */
+
+app.get("/api/hello", (_req, res) => res.send("API is working!"));
+
+app.get("/api/cv/download", async (_req, res) => {
+  console.log("[DOWNLOAD] Incoming request for CV download...");
+  try {
+    const setting = await Setting.findOne({ keyName: "cvLink" });
+    if (!setting || !setting.value) {
+      console.log("[DOWNLOAD] CV setting not found");
+      return res.status(404).json({ error: "CV not found" });
+    }
+
+    const cvValue = setting.value;
+    console.log("[DOWNLOAD] CV Link in DB:", cvValue);
+
+    // Direct check for local uploads
+    if (cvValue.includes("/uploads/")) {
+      const parts = cvValue.split("/uploads/");
+      const fileName = parts[1].split('?')[0]; // remove any query params
+      const filePath = path.resolve(uploadsDir, fileName);
+      console.log("[DOWNLOAD] Resolved path:", filePath);
+
+      if (fs.existsSync(filePath)) {
+        // Open in browser (inline) but also give a hint if they save it
+        res.setHeader('Content-Type', 'application/pdf');
+        res.setHeader('Content-Disposition', 'inline; filename="Full_Stack_Developer_Resume(Tamima_Mollick_Tuly).pdf"');
+        return res.sendFile(filePath);
+      } else {
+        console.log("[DOWNLOAD] File not found on disk:", filePath);
+      }
+    }
+
+    // If external or not found locally, just redirect
+    console.log("[DOWNLOAD] Falling back to redirect:", cvValue);
+    res.redirect(cvValue);
+  } catch (err: any) {
+    console.error("[DOWNLOAD] CRASH ERROR:", err.message, err.stack);
+    if (!res.headersSent) {
+      res.status(500).json({ error: "Download failed" });
+    }
+  }
 });
 
 /* ================= PUBLIC ================= */
@@ -359,6 +404,7 @@ app.post("/api/login", async (req, res) => {
   console.log(`[API] login success for ${username}`);
   res.json({ success: true, token });
 });
+
 
 /* ================= ADMIN CRUD ================= */
 
