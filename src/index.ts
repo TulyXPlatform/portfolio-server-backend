@@ -660,17 +660,18 @@ app.get("/api/admin/analytics", authMiddleware, async (_req, res) => {
       ])
     ]);
     // Pad the last 30 days with zeros so the chart doesn't look flat or empty
-    const last30Days: Record<string, number> = {};
+    const paddedDaily: { date: string, count: number }[] = [];
     for (let i = 29; i >= 0; i--) {
         const d = new Date();
         d.setDate(d.getDate() - i);
         const key = d.toISOString().split('T')[0];
-        last30Days[key] = 0;
+        
+        // Find if we have real data for this day
+        const realData = daily.find(day => day._id === key);
+        paddedDaily.push({ date: key, count: realData ? realData.count : 0 });
     }
-    daily.forEach(d => { 
-        if (d._id in last30Days) last30Days[d._id] = d.count; 
-    });
-    const paddedDaily = Object.entries(last30Days).map(([date, count]) => ({ date, count }));
+
+    console.log(`[API] Analytics data payload: ${total} total visitors, ${paddedDaily.filter(d => d.count > 0).length} active days in 30d`);
 
     console.log(`[API] Analytics data fetched: ${total} total, showing ${recent.length} recent`);
     res.json({
