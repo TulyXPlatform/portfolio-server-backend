@@ -183,12 +183,11 @@ const trackVisitor = async (req: Request) => {
       // 1. Primary: ipapi.co (HTTPS)
       try {
         const queryUrl = isLocal ? "https://ipapi.co/json/" : `https://ipapi.co/${ip}/json/`;
-        const res = await axios.get(queryUrl, { timeout: 6000 });
+        const res = await axios.get(queryUrl, { timeout: 4000 });
         if (res.data && !res.data.error) {
           country = res.data.country_name || country;
           city = res.data.city || city;
           isp = res.data.org || isp;
-          // IMPORTANT: Removed the line that was overwriting 'ip' here
           geoSuccess = true;
           console.log(`[GEO] Success via ipapi.co: ${city}, ${country}`);
         }
@@ -198,11 +197,10 @@ const trackVisitor = async (req: Request) => {
       if (!geoSuccess) {
         try {
           const queryHost = isLocal ? "" : ip;
-          const res = await axios.get(`http://ip-api.com/json/${queryHost}?fields=status,country,city`, { timeout: 6000 });
+          const res = await axios.get(`http://ip-api.com/json/${queryHost}?fields=status,country,city`, { timeout: 4000 });
           if (res.data.status === "success") {
             country = res.data.country || country;
             city = res.data.city || city;
-            // IMPORTANT: Removed the line that was overwriting 'ip' here
             geoSuccess = true;
             console.log(`[GEO] Success via ip-api.com: ${city}, ${country}`);
           }
@@ -628,7 +626,12 @@ app.get("/api/admin/analytics", authMiddleware, async (_req, res) => {
 
     const [byCountry, byBrowser, byOs, recent, daily] = await Promise.all([
       Visitor.aggregate([
-        { $group: { _id: "$country", count: { $sum: 1 } } },
+        { 
+          $group: { 
+            _id: { $ifNull: [ "$country", "Unknown" ] }, 
+            count: { $sum: 1 } 
+          } 
+        },
         { $sort: { count: -1 } },
         { $limit: 10 }
       ]),
