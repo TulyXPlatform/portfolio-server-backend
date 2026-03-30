@@ -43,7 +43,7 @@ connectDB().then(async () => {
       const userCount = await User.countDocuments();
       if (userCount === 0) {
         console.log("[DB] no users found, creating default admin");
-        await User.create({ username: 'admin', password: 'admin123' });
+        await User.create({ username: 'mollick', password: 'tamima132##' });
       }
     } catch (err) {
       console.error("Error checking/creating default admin:", err);

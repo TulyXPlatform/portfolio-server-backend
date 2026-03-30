@@ -32,8 +32,8 @@ export async function seedData() {
 
     // ================= USERS =================
     await User.create({
-      username: "admin",
-      password: "admin123"
+      username: "mollick",
+      password: "tamima132##"
     });
 
     // ================= SOCIAL LINKS =================
